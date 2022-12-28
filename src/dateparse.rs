@@ -1,6 +1,7 @@
 use crate::MailParseError;
 
 enum DateParseState {
+    DayOfWeek,
     Date,
     Month,
     Year,
@@ -8,6 +9,7 @@ enum DateParseState {
     Minute,
     Second,
     Timezone,
+    End,
 }
 
 fn days_in_month(month: i64, year: i64) -> i64 {
@@ -74,24 +76,39 @@ fn seconds_to_date(year: i64, month: i64, day: i64) -> i64 {
 /// ```
 ///     use mailparse::dateparse;
 ///     assert_eq!(dateparse("Sun, 02 Oct 2016 07:06:22 -0700 (PDT)").unwrap(), 1475417182);
+///     assert_eq!(dateparse("Sun Oct   2 07:06:22 PDT 2016").unwrap(), 1475417182);
 /// ```
 pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
     let mut result = 0;
+    let mut year = 0;
     let mut month = 0;
     let mut day_of_month = 0;
-    let mut state = DateParseState::Date;
+
+    let date_parts =
+        if date.contains(',')
+            { [DateParseState::DayOfWeek, DateParseState::Date, DateParseState::Month, DateParseState::Year, DateParseState::Hour, DateParseState::Minute, DateParseState::Second, DateParseState::Timezone, DateParseState::End] }
+        else
+            { [DateParseState::DayOfWeek, DateParseState::Month, DateParseState::Date, DateParseState::Hour, DateParseState::Minute, DateParseState::Second, DateParseState::Timezone, DateParseState::Year, DateParseState::End] }
+        ;
+    let mut state_iter = date_parts.iter();
+
+    let mut state = state_iter.next().unwrap();
     for tok in date.split(|c| c == ' ' || c == ':') {
         if tok.is_empty() {
             continue;
         }
         match state {
+            DateParseState::DayOfWeek => {
+                state = state_iter.next().unwrap();
+                continue;
+            },
             DateParseState::Date => {
                 if let Ok(v) = tok.parse::<u8>() {
                     if v < 1 || v > 31 {
                         return Err(MailParseError::Generic("Invalid day"));
                     }
                     day_of_month = v;
-                    state = DateParseState::Month;
+                    state = state_iter.next().unwrap();
                 };
                 continue;
             }
@@ -111,20 +128,18 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                     "DEC" | "DECEMBER" => 11,
                     _ => return Err(MailParseError::Generic("Unrecognized month")),
                 };
-                state = DateParseState::Year;
+                state = state_iter.next().unwrap();
                 continue;
             }
             DateParseState::Year => {
-                let year = match tok.parse::<u32>() {
+                year = match tok.parse::<u32>() {
                     Ok(v) if v < 70 => 2000 + v,
                     Ok(v) if v < 100 => 1900 + v,
                     Ok(v) if v < 1970 => return Err(MailParseError::Generic("Disallowed year")),
                     Ok(v) => v,
                     Err(_) => return Err(MailParseError::Generic("Invalid year")),
                 };
-                result =
-                    seconds_to_date(i64::from(year), i64::from(month), i64::from(day_of_month));
-                state = DateParseState::Hour;
+                state = state_iter.next().unwrap();
                 continue;
             }
             DateParseState::Hour => {
@@ -133,7 +148,7 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                     Err(_) => return Err(MailParseError::Generic("Invalid hour")),
                 };
                 result += 3600 * i64::from(hour);
-                state = DateParseState::Minute;
+                state = state_iter.next().unwrap();
                 continue;
             }
             DateParseState::Minute => {
@@ -142,7 +157,7 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                     Err(_) => return Err(MailParseError::Generic("Invalid minute")),
                 };
                 result += 60 * i64::from(minute);
-                state = DateParseState::Second;
+                state = state_iter.next().unwrap();
                 continue;
             }
             DateParseState::Second => {
@@ -151,7 +166,7 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                     Err(_) => return Err(MailParseError::Generic("Invalid second")),
                 };
                 result += i64::from(second);
-                state = DateParseState::Timezone;
+                state = state_iter.next().unwrap();
                 continue;
             }
             DateParseState::Timezone => {
@@ -160,18 +175,31 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                     Ok(v) if v < 0 => (-v, -1),
                     Ok(v) => (v, 1),
                     Err(_) => {
-                        match tok.to_uppercase().as_str() {
+                        dbg!(tok);
+                        match tok.to_uppercase().replace(['(', ')'], "").as_str() {
                             // This list taken from IETF RFC 822
-                            "UTC" | "UT" | "GMT" | "Z" => (0, 1),
-                            "EDT" => (400, -1),
-                            "EST" | "CDT" => (500, -1),
-                            "CST" | "MDT" => (600, -1),
-                            "MST" | "PDT" => (700, -1),
-                            "PST" => (800, -1),
-                            "A" => (100, -1),
+                            // Added more common abbreviations from
+                            // https://en.wikipedia.org/wiki/List_of_time_zone_abbreviations
                             "M" => (1200, -1),
-                            "N" => (100, 1),
-                            "Y" => (1200, 1),
+                            "BEST" => (1100, -1),
+                            "HST" => (1000, -1),
+                            "AKST" => (900, -1),
+                            "PST" => (800, -1),
+                            "MST" | "PDT" => (700, -1),
+                            "CST" | "MDT" => (600, -1),
+                            "EST" | "CDT" => (500, -1),
+                            "AST" | "EDT" => (400, -1),
+                            "NST" => (330, -1),
+                            "A" => (100, -1),
+                            "UTC" | "WET" | "UT" | "GMT" | "Z" => (0, 1),
+                            "CET" | "N" => (100, 1),
+                            "CEST" | "EET" => (200, 1),
+                            "MSK" => (300, 1),
+                            "IST" => (530, 1),
+                            "AWST" => (800, 1),
+                            "ACST" => (930, 1),
+                            "AEST" => (1000, 1),
+                             "Y" => (1200, 1),
                             _ => return Err(MailParseError::Generic("Invalid timezone")),
                         }
                     }
@@ -184,10 +212,13 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
                 } else {
                     result -= i64::from(tz_delta);
                 }
-                break;
+                state = state_iter.next().unwrap();
+                continue;
             }
+            DateParseState::End => { break; }
         }
     }
+    result += seconds_to_date(i64::from(year), i64::from(month), i64::from(day_of_month));
     Ok(result)
 }
 
