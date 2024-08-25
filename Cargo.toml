@@ -1,6 +1,6 @@
 [package]
 name = "mailparse"
-version = "0.15.0"
+version = "0.15.0+frk.1"
 authors = ["Kartikaya Gupta"]
 edition = "2018"
 license = "0BSD"
@@ -12,6 +12,8 @@ readme = "README.md"
 keywords = ["parser", "email", "rfc822", "mime", "maildir"]
 categories = ["email", "parsing"]
 exclude = [".gitattributes", ".gitignore", ".github/**", "examples/**"]
+
+publish = ["elleci"]
 
 [badges]
 maintenance = { status = "passively-maintained" }
