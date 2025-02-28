@@ -1,6 +1,6 @@
 [package]
 name = "mailparse"
-version = "0.15.0+frk.1"
+version = "0.16.1+frk.1"
 authors = ["Kartikaya Gupta"]
 edition = "2018"
 license = "0BSD"
