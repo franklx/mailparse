@@ -93,7 +93,7 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
     let mut state_iter = date_parts.iter();
 
     let mut state = state_iter.next().unwrap();
-    for tok in date.split(|c| c == ' ' || c == ':') {
+    for tok in date.split([' ', ':']) {
         if tok.is_empty() {
             continue;
         }
@@ -172,36 +172,56 @@ pub fn dateparse(date: &str) -> Result<i64, MailParseError> {
             DateParseState::Timezone => {
                 let (tz, tz_sign) = match tok.parse::<i32>() {
                     Ok(v) if !(-2400..=2400).contains(&v) => {
-                        return Err(MailParseError::Generic("Invalid timezone"))
+                        return Err(MailParseError::Generic("Invalid timezone"));
                     }
                     Ok(v) if v < 0 => (-v, -1),
                     Ok(v) => (v, 1),
                     Err(_) => {
-                        dbg!(tok);
                         match tok.to_uppercase().replace(['(', ')'], "").as_str() {
                             // This list taken from IETF RFC 822
-                            // Added more common abbreviations from
-                            // https://en.wikipedia.org/wiki/List_of_time_zone_abbreviations
-                            "M" => (1200, -1),
-                            "BEST" => (1100, -1),
-                            "HST" => (1000, -1),
-                            "AKST" => (900, -1),
-                            "PST" => (800, -1),
-                            "MST" | "PDT" => (700, -1),
-                            "CST" | "MDT" => (600, -1),
-                            "EST" | "CDT" => (500, -1),
-                            "AST" | "EDT" => (400, -1),
-                            "NST" => (330, -1),
-                            "A" => (100, -1),
-                            "UTC" | "WET" | "UT" | "GMT" | "Z" => (0, 1),
-                            "CET" | "N" => (100, 1),
+                            "UTC" | "UT" | "GMT" | "WET" | "Z" => (0, 1),
+                            "CET" => (100, 1),
                             "CEST" | "EET" => (200, 1),
                             "MSK" => (300, 1),
                             "IST" => (530, 1),
                             "AWST" => (800, 1),
                             "ACST" => (930, 1),
                             "AEST" => (1000, 1),
-                             "Y" => (1200, 1),
+                            "NST" => (330, -1),
+                            "AST" | "EDT" => (400, -1),
+                            "EST" | "CDT" => (500, -1),
+                            "CST" | "MDT" => (600, -1),
+                            "MST" | "PDT" => (700, -1),
+                            "PST" => (800, -1),
+                            "AKST" => (900, -1),
+                            "HST" => (1000, -1),
+                            "BEST" => (1100, -1),
+                            // Military time zones (RFC 822, RFC 5322).  A-M (except J) are negative offsets, N-Y are positive.  J is not used.
+                            "A" => (100, -1),
+                            "B" => (200, -1),
+                            "C" => (300, -1),
+                            "D" => (400, -1),
+                            "E" => (500, -1),
+                            "F" => (600, -1),
+                            "G" => (700, -1),
+                            "H" => (800, -1),
+                            "I" => (900, -1),
+                            // "J" is not used
+                            "K" => (1000, -1),
+                            "L" => (1100, -1),
+                            "M" => (1200, -1),
+                            "N" => (100, 1),
+                            "O" => (200, 1),
+                            "P" => (300, 1),
+                            "Q" => (400, 1),
+                            "R" => (500, 1),
+                            "S" => (600, 1),
+                            "T" => (700, 1),
+                            "U" => (800, 1),
+                            "V" => (900, 1),
+                            "W" => (1000, 1),
+                            "X" => (1100, 1),
+                            "Y" => (1200, 1),
                             _ => return Err(MailParseError::Generic("Invalid timezone")),
                         }
                     }
@@ -250,10 +270,21 @@ mod tests {
             dateparse("Fri, 31 Dec 2400 00:00:00 +0000").unwrap(),
             13601001600
         );
-        assert_eq!(dateparse("17 Sep 2016 16:05:38 -1000").unwrap(), 1474164338);
+        assert_eq!(
+            dateparse("Sat, 17 Sep 2016 16:05:38 -1000").unwrap(),
+            1474164338
+        );
         assert_eq!(
             dateparse("Fri, 30 Nov 2012 20:57:23 GMT").unwrap(),
             1354309043
+        );
+        assert_eq!(
+            dateparse("Fri, 30 Nov 2012 20:57:23 Q").unwrap(),
+            1354294643
+        );
+        assert_eq!(
+            dateparse("Fri, 30 Nov 2012 20:57:23 D").unwrap(),
+            1354323443
         );
 
         // Day cannot be zero.
